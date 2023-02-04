@@ -2,19 +2,13 @@
 using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
-using System.Text.Json.Serialization;
-using System.Text;
 using Newtonsoft.Json;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.IO;
-using Org.BouncyCastle.OpenSsl;
-using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.Security;
-using Org.BouncyCastle.Crypto.Parameters;
-using JWT.Builder;
 using System.Net.Http.Headers;
+using System.Security.Claims;
 
 namespace TestConsoleApp
 {
@@ -22,6 +16,7 @@ namespace TestConsoleApp
     {
         static async Task Main(string[] args)
         {
+            /*
             const string privateKeyPem = "private_key_here";
             var header = new { alg = "RS256", typ = "JWT", kid = "private_key_id_here" };
             var headerJson = JsonConvert.SerializeObject(header);
@@ -54,15 +49,63 @@ namespace TestConsoleApp
             var token = new JwtSecurityToken(jwt, signingCredentials: creds);
             var encodedJwt = new JwtSecurityTokenHandler().WriteToken(token);
             Console.WriteLine(encodedJwt);
+            */
+
+            var privateKeyPem = "private_key_here";
+
+            privateKeyPem = privateKeyPem.Replace("-----BEGIN PRIVATE KEY-----", string.Empty).Replace("-----END PRIVATE KEY-----", string.Empty);
+            privateKeyPem = privateKeyPem.Replace("-----BEGIN RSA PRIVATE KEY-----", string.Empty).Replace("-----END RSA PRIVATE KEY-----", string.Empty);
+            privateKeyPem = privateKeyPem.Replace(Environment.NewLine, string.Empty);
+            privateKeyPem = privateKeyPem.Replace("\n", string.Empty);
+            var privateKey2 = Convert.FromBase64String(privateKeyPem);
+
+            using RSA rsa = RSA.Create();
+            //rsa.ImportRSAPrivateKey(privateKey2, out _);
+            rsa.ImportPkcs8PrivateKey(privateKey2, out _);
+
+            var securityKey = new RsaSecurityKey(rsa);
+            //securityKey.KeyId = "private_key_id_here"; // Add it with jwt.Header
+
+            var signingCredentials = new SigningCredentials(securityKey, SecurityAlgorithms.RsaSha256)
+            {
+                CryptoProviderFactory = new CryptoProviderFactory { CacheSignatureProviders = false }
+            };
+
+            var claims = new List<Claim> {
+                new Claim("iss", "client_email_here"),
+                new Claim("sub", "client_email_here"),
+                new Claim("aud", "https://fleetengine.googleapis.com/"),
+                new Claim("iat", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()),
+                new Claim("exp", DateTimeOffset.UtcNow.AddMinutes(60).ToUnixTimeSeconds().ToString()),
+                new Claim("authorization", JsonConvert.SerializeObject(
+                    new {
+                        deliveryvehicleid = "*",
+                        trackingid = "*"
+                    }))
+            };
+
+            var jwt = new JwtSecurityToken(
+                claims: claims,
+                signingCredentials: signingCredentials
+            );
+
+            jwt.Header.Add("kid", "private_key_id_here");
+
+            string token = new JwtSecurityTokenHandler().WriteToken(jwt);
+            File.WriteAllText(@"D:\log.log", token);
+
+            var projectId = "<PROJECT_ID_HERE>";
 
             var client = new HttpClient();
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", encodedJwt);
-            var response = await client.GetAsync("https://fleetengine.googleapis.com/v1/providers/<PROJECT_ID_HERE>/vehicles");
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            // Get vehicles
+            var response = await client.GetAsync($"https://fleetengine.googleapis.com/v1/providers/{projectId}/vehicles");
             var responseStr = await response.Content.ReadAsStringAsync();
             Console.WriteLine(responseStr);
 
+            Console.WriteLine("Finish");
+            Console.ReadLine();
         }
-
     }
 }
-
