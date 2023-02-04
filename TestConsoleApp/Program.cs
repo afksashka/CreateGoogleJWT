@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Net.Http.Headers;
 using System.Security.Claims;
+using System.Text;
 
 namespace TestConsoleApp
 {
@@ -53,15 +54,26 @@ namespace TestConsoleApp
 
             var privateKeyPem = "private_key_here";
 
-            privateKeyPem = privateKeyPem.Replace("-----BEGIN PRIVATE KEY-----", string.Empty).Replace("-----END PRIVATE KEY-----", string.Empty);
-            privateKeyPem = privateKeyPem.Replace("-----BEGIN RSA PRIVATE KEY-----", string.Empty).Replace("-----END RSA PRIVATE KEY-----", string.Empty);
-            privateKeyPem = privateKeyPem.Replace(Environment.NewLine, string.Empty);
-            privateKeyPem = privateKeyPem.Replace("\n", string.Empty);
-            var privateKey2 = Convert.FromBase64String(privateKeyPem);
+            // Check if privateKey is Pkcs or RSA
+            bool isPkcsPrivateKey = privateKeyPem.Contains("BEGIN PRIVATE KEY");
+
+            if (isPkcsPrivateKey)
+                privateKeyPem = privateKeyPem.Replace("-----BEGIN PRIVATE KEY-----", string.Empty).Replace("-----END PRIVATE KEY-----", string.Empty);
+            else
+                privateKeyPem = privateKeyPem.Replace("-----BEGIN RSA PRIVATE KEY-----", string.Empty).Replace("-----END RSA PRIVATE KEY-----", string.Empty);
+
+            privateKeyPem = privateKeyPem
+                .Replace(Environment.NewLine, string.Empty)
+                .Replace("\n", string.Empty);
+
+            var privateKey = Convert.FromBase64String(privateKeyPem);
 
             using RSA rsa = RSA.Create();
-            //rsa.ImportRSAPrivateKey(privateKey2, out _);
-            rsa.ImportPkcs8PrivateKey(privateKey2, out _);
+
+            if (isPkcsPrivateKey)
+                rsa.ImportPkcs8PrivateKey(privateKey, out _);
+            else
+                rsa.ImportRSAPrivateKey(privateKey, out _);
 
             var securityKey = new RsaSecurityKey(rsa);
             //securityKey.KeyId = "private_key_id_here"; // Add it with jwt.Header
@@ -80,7 +92,10 @@ namespace TestConsoleApp
                 new Claim("authorization", JsonConvert.SerializeObject(
                     new {
                         deliveryvehicleid = "*",
-                        trackingid = "*"
+                        trackingid = "*",
+                        taskid = "*",
+                        vehicleid = "*",
+                        tripid = "*"
                     }))
             };
 
@@ -91,17 +106,35 @@ namespace TestConsoleApp
 
             jwt.Header.Add("kid", "private_key_id_here");
 
+            // Generate JWT token
             string token = new JwtSecurityTokenHandler().WriteToken(jwt);
-            File.WriteAllText(@"D:\log.log", token);
-
-            var projectId = "<PROJECT_ID_HERE>";
 
             var client = new HttpClient();
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
+            var projectId = "<PROJECT_ID_HERE>";
+
             // Get vehicles
-            var response = await client.GetAsync($"https://fleetengine.googleapis.com/v1/providers/{projectId}/vehicles");
+            Console.WriteLine("Get vehicles");
+            var url = $"https://fleetengine.googleapis.com/v1/providers/{projectId}/vehicles";
+            var response = await client.GetAsync(url);
             var responseStr = await response.Content.ReadAsStringAsync();
+            Console.WriteLine(responseStr);
+
+            // Create vehicle
+            Console.WriteLine("Create vehicle");
+            var createvehicleDto = new
+            {
+                vehicleState = "OFFLINE",
+                supportedTripTypes = new[] { "EXCLUSIVE" },
+                maximumCapacity = 4,
+                vehicleType = new { category = "AUTO" },
+                attributes = new[] { new { key = "on_trip", value = "false" } }
+            };
+            url = $"https://fleetengine.googleapis.com/v1/providers/{projectId}/vehicles?vehicleId=vid-1";
+            var data = new StringContent(JsonConvert.SerializeObject(createvehicleDto), Encoding.UTF8, "application/json");
+            response = await client.PostAsync(url, data);
+            responseStr = await response.Content.ReadAsStringAsync();
             Console.WriteLine(responseStr);
 
             Console.WriteLine("Finish");
