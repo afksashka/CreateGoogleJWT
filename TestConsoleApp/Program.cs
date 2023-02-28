@@ -88,15 +88,7 @@ namespace TestConsoleApp
                 new Claim("sub", "client_email_here"),
                 new Claim("aud", "https://fleetengine.googleapis.com/"),
                 new Claim("iat", DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()),
-                new Claim("exp", DateTimeOffset.UtcNow.AddMinutes(60).ToUnixTimeSeconds().ToString()),
-                new Claim("authorization", JsonConvert.SerializeObject(
-                    new {
-                        deliveryvehicleid = "*",
-                        trackingid = "*",
-                        taskid = "*",
-                        vehicleid = "*",
-                        tripid = "*"
-                    }))
+                new Claim("exp", DateTimeOffset.UtcNow.AddMinutes(60).ToUnixTimeSeconds().ToString())
             };
 
             var jwt = new JwtSecurityToken(
@@ -106,6 +98,14 @@ namespace TestConsoleApp
 
             jwt.Header.Add("kid", "private_key_id_here");
 
+            jwt.Payload.Add("authorization", new
+            {
+                deliveryvehicleid = "*",
+                trackingid = "*",
+                taskid = "*",
+                vehicleid = "*",
+                tripid = "*"
+            });
             // Generate JWT token
             string token = new JwtSecurityTokenHandler().WriteToken(jwt);
 
